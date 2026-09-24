@@ -1,5 +1,7 @@
 #include "tgaimage.h"
-#include "cmath"
+#include <cmath>
+#include <random>
+#include <ctime>
 
 constexpr TGAColor white   = {255, 255, 255, 255}; // BGRA order
 constexpr TGAColor green   = {  0, 255,   0, 255};
@@ -29,23 +31,45 @@ void line(int ax, int ay, int bx, int by, TGAImage& framebuffer, const TGAColor&
     }
 }
 
+TGAColor random_color_V1() {
+    return {
+        static_cast<unsigned char>(rand()%255),
+        static_cast<unsigned char>(rand()%255),
+        static_cast<unsigned char>(rand()%255),
+        static_cast<unsigned char>(rand()%255),
+    };
+}
+
+TGAColor random_color_V2(std::uniform_int_distribution<> &random_number_generator, std::mt19937 &gen) {
+    return {
+        static_cast<unsigned char>(random_number_generator(gen)),
+        static_cast<unsigned char>(random_number_generator(gen)),
+        static_cast<unsigned char>(random_number_generator(gen)),
+        static_cast<unsigned char>(random_number_generator(gen))
+    };
+}
+
+
 int main(int argc, char** argv) {
     constexpr int width  = 64;
     constexpr int height = 64;
     TGAImage framebuffer(width, height, TGAImage::RGB);
 
-    int ax =  7, ay =  3;
-    int bx = 12, by = 37;
-    int cx = 62, cy = 53;
+    std::random_device rd;
+    std::mt19937 gen(rd());
 
-    line(ax, ay, bx, by, framebuffer, blue);
-    line(cx, cy, bx, by, framebuffer, green);
-    line(cx, cy, ax, ay, framebuffer, yellow);
-    line(ax, ay, cx, cy, framebuffer, red);
-    
-    framebuffer.set(ax, ay, white);
-    framebuffer.set(bx, by, white);
-    framebuffer.set(cx, cy, white);
+    std::uniform_int_distribution<> height_distribution(0, height);
+    std::uniform_int_distribution<> width_distribution(0, width);
+    std::uniform_int_distribution<> random_color_number(0, 255);
+
+    std::srand(std::time({}));
+
+    for(int i = 0; i <(1<<24); ++i) {
+        int ax = width_distribution(gen); int ay = height_distribution(gen);
+        int bx = width_distribution(gen); int by = height_distribution(gen);
+
+        line(ax, ay, bx, by, framebuffer, random_color_V2(random_color_number, gen));
+    }
 
     framebuffer.write_tga_file("framebuffer.tga");
     return 0;
