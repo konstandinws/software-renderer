@@ -20,7 +20,7 @@ Model::Model(std::string filename) {
                 std::string next;
                 for(int i = 0; i < 3; ++i) {
                     file >> next;
-                    indexes[i] = next[0] - '0';
+                    indexes[i] = std::stoi(next.substr(0, next.find('/')));;
                 }
                 std::tuple<float, float, float> new_face = { indexes[0], indexes[1], indexes[2] };
                 faces.push_back(new_face);
