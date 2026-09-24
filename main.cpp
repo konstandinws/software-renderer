@@ -19,7 +19,8 @@ void line(int ax, int ay, int bx, int by, TGAImage& framebuffer, const TGAColor&
         std::swap(ax, bx);
         std::swap(ay, by);
     }
-    float y = ay;
+    int y = ay;
+    int ierror = 0;
     for(int x = ax; x <= bx; ++x) {
         float t = (x - ax) / static_cast<float>(bx - ax);
         int y = std::round(ay + t * (by - ay));
@@ -27,7 +28,11 @@ void line(int ax, int ay, int bx, int by, TGAImage& framebuffer, const TGAColor&
             framebuffer.set(y, x, color);
         else
             framebuffer.set(x, y, color);
-        y += (by-ay) / static_cast<float>(bx-ax); 
+        ierror += 2 * std::abs(by-ay);
+        if(ierror > bx - ax) {
+            y += by > ay ? 1 : -1;
+            ierror -= 2 * (bx-ax);
+        }
     }
 }
 
