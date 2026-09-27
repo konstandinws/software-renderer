@@ -6,8 +6,8 @@
 #include "tgaimage.h"
 #include "model.h"
 
-constexpr int width  = 800;
-constexpr int height = 800;
+constexpr int width  = 128;
+constexpr int height = 128;
 
 constexpr TGAColor white   = {255, 255, 255, 255}; // BGRA order
 constexpr TGAColor green   = {  0, 255,   0, 255};
@@ -15,7 +15,7 @@ constexpr TGAColor red     = {  0,   0, 255, 255};
 constexpr TGAColor blue    = {255, 128,  64, 255};
 constexpr TGAColor yellow  = {  0, 200, 255, 255};
 
-void line(int ax, int ay, int bx, int by, TGAImage &framebuffer, TGAColor color) {
+void line(int ax, int ay, int bx, int by, TGAImage &framebuffer, const TGAColor &color) {
     bool steep = std::abs(ax-bx) < std::abs(ay-by);
     if (steep) { // if the line is steep, we transpose the image
         std::swap(ax, ay);
@@ -43,6 +43,51 @@ std::tuple<int,int> project(vec3 v) { // First of all, (x,y) is an orthogonal pr
              (v.y + 1.) * height/2 }; // we want to shift the vector (x,y) and then scale it to span the entire screen.
 }
 
+struct Triangle {
+
+    int ax,ay;
+    int bx,by;
+    int cx,cy;
+};
+
+void sort(Triangle &t) {
+    if(t.ay > t.by) {
+        std::swap(t.ax, t.bx);
+        std::swap(t.ay, t.by);
+    }
+    if(t.ay > t.cy) {
+        std::swap(t.ax, t.cx);
+        std::swap(t.ay, t.cy);
+    }
+    if(t.by > t.cy) {
+        std::swap(t.bx, t.cx);
+        std::swap(t.by, t.cy);
+    }
+}
+
+void triangle(Triangle &t, TGAImage &framebuffer, TGAColor color) {
+    sort(t);
+    int height = t.cy - t.ay;
+
+    if (t.ay != t.by) { // if the bottom half is not degenerate
+        int segment_height = t.by - t.ay;
+        for (int y=t.ay; y<=t.by; y++) { // sweep the horizontal line from ay to by
+            int x1 = t.ax + ((t.cx - t.ax)*(y - t.ay)) / height;
+            int x2 = t.ax + ((t.bx - t.ax)*(y - t.ay)) / segment_height;
+            line(x1, y, x2, y, framebuffer, color);
+        }
+    }
+
+    if (t.by != t.cy) {
+        int segment_height = t.cy - t.by;
+        for (int y = t.by; y <= t.cy; y++) {
+            int x1 = t.ax + ((t.cx - t.ax)*(y - t.ay)) / height;
+            int x2 = t.bx + ((t.cx - t.bx)*(y - t.by)) / segment_height;
+            line(x1, y, x2, y, framebuffer, color);
+        }
+    }
+}
+
 TGAColor random_color_V1() {
     return {
         static_cast<unsigned char>(rand()%255),
@@ -63,28 +108,33 @@ TGAColor random_color_V2(std::uniform_int_distribution<> &random_number_generato
 
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " obj/model.obj" << std::endl;
-        return 1;
-    }
 
-    Model model(argv[1]);
     TGAImage framebuffer(width, height, TGAImage::RGB);
 
-    for (int i=0; i<model.nfaces(); i++) { // iterate through all triangles
-        auto [ax, ay] = project(model.vert(i, 0));
-        auto [bx, by] = project(model.vert(i, 1));
-        auto [cx, cy] = project(model.vert(i, 2));
-        line(ax, ay, bx, by, framebuffer, red);
-        line(bx, by, cx, cy, framebuffer, red);
-        line(cx, cy, ax, ay, framebuffer, red);
-    }
+    Triangle t1 = {7, 45, 35, 100, 45,  60};
+    Triangle t2 = {120, 35, 90,   5, 45, 110};
+    Triangle t3 = {115, 83, 80,  90, 85, 120};
 
-    for (int i=0; i<model.nverts(); i++) { // iterate through all vertices
-        vec3 v = model.vert(i);            // get i-th vertex
-        auto [x, y] = project(v);          // project it to the screen
-        framebuffer.set(x, y, white);
-    }
+    triangle(t1, framebuffer, red);
+    triangle(t2, framebuffer, white);
+    triangle(t3, framebuffer, green);
+
+
+
+    // int total_steps = 100 - 35;
+
+    // for (int i = 0; i < total_steps; ++i) {
+
+    //     float t = (float)i / total_steps;
+
+    //     int ax = t1.ax + t * (t1.bx - t1.ax);
+    //     int ay = t1.ay + t * (t1.by - t1.ay);
+
+    //     int bx = t1.ax + t * (t1.cx - t1.ax);
+    //     int by = t1.ay + t * (t1.cy - t1.ay);
+
+    //     line(ax, ay, bx, by, framebuffer, red);
+    // }
 
     framebuffer.write_tga_file("framebuffer.tga");
     return 0;
