@@ -6,6 +6,9 @@
 #include "tgaimage.h"
 #include "model.h"
 
+constexpr int width  = 800;
+constexpr int height = 800;
+
 constexpr TGAColor white   = {255, 255, 255, 255}; // BGRA order
 constexpr TGAColor green   = {  0, 255,   0, 255};
 constexpr TGAColor red     = {  0,   0, 255, 255};
@@ -35,6 +38,11 @@ void line(int ax, int ay, int bx, int by, TGAImage &framebuffer, TGAColor color)
     }
 }
 
+std::tuple<int,int> project(vec3 v) { // First of all, (x,y) is an orthogonal projection of the vector (x,y,z).
+    return { (v.x + 1.) *  width/2,   // Second, since the input models are scaled to have fit in the [-1,1]^3 world coordinates,
+             (v.y + 1.) * height/2 }; // we want to shift the vector (x,y) and then scale it to span the entire screen.
+}
+
 TGAColor random_color_V1() {
     return {
         static_cast<unsigned char>(rand()%255),
@@ -53,44 +61,30 @@ TGAColor random_color_V2(std::uniform_int_distribution<> &random_number_generato
     };
 }
 
-void draw_model(TGAImage &framebuffer, const Model &model, const int w, const int h) {
-
-    for(int i = 0; i < model.faces.size() ; ++i) {
-        int vertice_index_0 = std::get<0>(model.faces[i]) - 1;
-        int vertice_index_1 = std::get<1>(model.faces[i]) - 1;
-        int vertice_index_2 = std::get<2>(model.faces[i]) - 1;
-
-        // 1 - 2
-        line((std::get<0>(model.vertices[vertice_index_0]) + 1.0 ) * w / 2.0,
-             (std::get<1>(model.vertices[vertice_index_0]) + 1.0 ) * h / 2.0,
-             (std::get<0>(model.vertices[vertice_index_1]) + 1.0 ) * w / 2.0,
-             (std::get<1>(model.vertices[vertice_index_1]) + 1.0 ) * h / 2.0,
-             framebuffer, red);
-
-        // 2 - 3
-        line((std::get<0>(model.vertices[vertice_index_1]) + 1.0 ) * w / 2.0,
-             (std::get<1>(model.vertices[vertice_index_1]) + 1.0 ) * h / 2.0,
-             (std::get<0>(model.vertices[vertice_index_2]) + 1.0 ) * w / 2.0,
-             (std::get<1>(model.vertices[vertice_index_2]) + 1.0 ) * h / 2.0,
-             framebuffer, red);
-        
-        // 3 - 1
-        line((std::get<0>(model.vertices[vertice_index_2]) + 1.0 ) * w / 2.0,
-             (std::get<1>(model.vertices[vertice_index_2]) + 1.0 ) * h / 2.0,
-             (std::get<0>(model.vertices[vertice_index_0]) + 1.0 ) * w / 2.0,
-             (std::get<1>(model.vertices[vertice_index_0]) + 1.0 ) * h / 2.0,
-             framebuffer, red);
-    }
-}
 
 int main(int argc, char** argv) {
-    constexpr int width  = 64;
-    constexpr int height = 64;
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " obj/model.obj" << std::endl;
+        return 1;
+    }
+
+    Model model(argv[1]);
     TGAImage framebuffer(width, height, TGAImage::RGB);
 
-    Model model("test.txt");
+    for (int i=0; i<model.nfaces(); i++) { // iterate through all triangles
+        auto [ax, ay] = project(model.vert(i, 0));
+        auto [bx, by] = project(model.vert(i, 1));
+        auto [cx, cy] = project(model.vert(i, 2));
+        line(ax, ay, bx, by, framebuffer, red);
+        line(bx, by, cx, cy, framebuffer, red);
+        line(cx, cy, ax, ay, framebuffer, red);
+    }
 
-    draw_model(framebuffer, model, width, height);
+    for (int i=0; i<model.nverts(); i++) { // iterate through all vertices
+        vec3 v = model.vert(i);            // get i-th vertex
+        auto [x, y] = project(v);          // project it to the screen
+        framebuffer.set(x, y, white);
+    }
 
     framebuffer.write_tga_file("framebuffer.tga");
     return 0;

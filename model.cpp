@@ -1,45 +1,44 @@
+#include <fstream>
+#include <sstream>
 #include "model.h"
-#include <array>
 
-Model::Model(std::string filename) {
-    std::ifstream file(filename.c_str(), std::ios_base::in);
-    if(file) {
-        std::string text;
-        while(file >> text) {
-            if (text == "v") {
-                std::array<float, 3> pos;
-                std::string next;
-                for(int i = 0; i < 3; ++i) {
-                    file >> next;
-                    pos[i] = std::stof(next);
-                }
-                std::tuple<float, float, float> new_vertice = { pos[0], pos[1], pos[2] };
-                vertices.push_back(new_vertice);
-            } else if (text == "f") {
-                std::array<int, 3> indexes;
-                std::string next;
-                for(int i = 0; i < 3; ++i) {
-                    file >> next;
-                    indexes[i] = std::stoi(next.substr(0, next.find('/')));;
-                }
-                std::tuple<float, float, float> new_face = { indexes[0], indexes[1], indexes[2] };
-                faces.push_back(new_face);
+Model::Model(const std::string filename) {
+    std::ifstream in;
+    in.open(filename, std::ifstream::in);
+    if (in.fail()) return;
+    std::string line;
+    while (!in.eof()) {
+        std::getline(in, line);
+        std::istringstream iss(line.c_str());
+        char trash;
+        if (!line.compare(0, 2, "v ")) {
+            iss >> trash;
+            vec3 v;
+            for (int i : {0,1,2}) iss >> v[i];
+            verts.push_back(v);
+        } else if (!line.compare(0, 2, "f ")) {
+            int f,t,n, cnt = 0;
+            iss >> trash;
+            while (iss >> f >> trash >> t >> trash >> n) {
+                facet_vrt.push_back(--f);
+                cnt++;
+            }
+            if (3!=cnt) {
+                std::cerr << "Error: the obj file is supposed to be triangulated" << std::endl;
+                return;
             }
         }
-        file.close();
-    } else {
-        std::cerr << "Erreur de l'ouverture du fichier" << std::endl; 
     }
+    std::cerr << "# v# " << nverts() << " f# "  << nfaces() << std::endl;
 }
 
-void Model::show_vertices() {
-    for(auto el : vertices) {
-        std::cout << "( " << std::get<0>(el) << ", " << std::get<1>(el) << ", " << std::get<2>(el) << ")" << std::endl;
-    }
+int Model::nverts() const { return verts.size(); }
+int Model::nfaces() const { return facet_vrt.size()/3; }
+
+vec3 Model::vert(const int i) const {
+    return verts[i];
 }
 
-void Model::show_faces() {
-    for(auto el : faces) {
-        std::cout << "( " << std::get<0>(el) << ", " << std::get<1>(el) << ", " << std::get<2>(el) << ")" << std::endl;
-    }
+vec3 Model::vert(const int iface, const int nthvert) const {
+    return verts[facet_vrt[iface*3+nthvert]];
 }

@@ -1,3 +1,5 @@
 .vscode
 *.tga
 *.exe
+*.obj
+*.txt

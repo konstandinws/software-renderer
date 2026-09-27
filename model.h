@@ -1,23 +1,13 @@
 #include <vector>
-#include <tuple>
-#include <string>
-#include <fstream>
-#include <iostream>
+#include "geometry.h"
 
 class Model {
-    
+    std::vector<vec3> verts = {};    // array of vertices
+    std::vector<int> facet_vrt = {}; // per-triangle index in the above array
 public:
-    std::vector<std::tuple<float, float, float>> vertices;
-    // the index of the vertices that form a face
-    std::vector<std::tuple<int, int, int>> faces;
-    
-    Model(std::string filename);
-
-    void draw();
-
-    int number_vertices = vertices.size();
-    int number_faces = faces.size();
-
-    void show_vertices();
-    void show_faces();
+    Model(const std::string filename);
+    int nverts() const; // number of vertices
+    int nfaces() const; // number of triangles
+    vec3 vert(const int i) const;                          // 0 <= i < nverts()
+    vec3 vert(const int iface, const int nthvert) const;   // 0 <= iface <= nfaces(), 0 <= nthvert < 3
 };
