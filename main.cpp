@@ -89,14 +89,24 @@ void triangle(Triangle &t, TGAImage &framebuffer, TGAColor color) {
     }
 }
 
+double triangle_area(int ax, int ay, int bx, int by, int cx, int cy) {
+    return 0.5*((by-ay)*(bx+ax) + (cy-by)*(cx+bx) + (ay-cy)*(ax+cx));
+}
 void triangleV2(Triangle &t, TGAImage &framebuffer, const TGAColor &color) {
     int bbminx = std::min(std::min(t.ax, t.bx), t.cx); // bounding box for the triangle
     int bbminy = std::min(std::min(t.ay, t.by), t.cy); // defined by its top left and bottom right corners
     int bbmaxx = std::max(std::max(t.ax, t.bx), t.cx);
     int bbmaxy = std::max(std::max(t.ay, t.by), t.cy);
+
+    double total_area = triangle_area(t.ax, t.ay, t.bx, t.by, t.cx, t.cy);
+
 #pragma omp parallel for
     for (int x=bbminx; x<=bbmaxx; x++) {
         for (int y=bbminy; y<=bbmaxy; y++) {
+            double alpha = triangle_area(x, y, t.bx, t.by, t.cx, t.cy) / total_area;
+            double beta  = triangle_area(x, y, t.cx, t.cy, t.ax, t.ay) / total_area;
+            double gamma = triangle_area(x, y, t.ax, t.ay, t.bx, t.by) / total_area;
+            if (alpha<0 || beta<0 || gamma<0) continue;
             framebuffer.set(x, y, color);
         }
     }
