@@ -2,6 +2,7 @@
 #include <random>
 #include <ctime>
 #include <tuple>
+#include <array>
 
 #include "tgaimage.h"
 #include "model.h"
@@ -88,6 +89,19 @@ void triangle(Triangle &t, TGAImage &framebuffer, TGAColor color) {
     }
 }
 
+void triangleV2(Triangle &t, TGAImage &framebuffer, const TGAColor &color) {
+    int bbminx = std::min(std::min(t.ax, t.bx), t.cx); // bounding box for the triangle
+    int bbminy = std::min(std::min(t.ay, t.by), t.cy); // defined by its top left and bottom right corners
+    int bbmaxx = std::max(std::max(t.ax, t.bx), t.cx);
+    int bbmaxy = std::max(std::max(t.ay, t.by), t.cy);
+#pragma omp parallel for
+    for (int x=bbminx; x<=bbmaxx; x++) {
+        for (int y=bbminy; y<=bbmaxy; y++) {
+            framebuffer.set(x, y, color);
+        }
+    }
+}
+
 TGAColor random_color_V1() {
     return {
         static_cast<unsigned char>(rand()%255),
@@ -115,26 +129,9 @@ int main(int argc, char** argv) {
     Triangle t2 = {120, 35, 90,   5, 45, 110};
     Triangle t3 = {115, 83, 80,  90, 85, 120};
 
-    triangle(t1, framebuffer, red);
-    triangle(t2, framebuffer, white);
-    triangle(t3, framebuffer, green);
-
-
-
-    // int total_steps = 100 - 35;
-
-    // for (int i = 0; i < total_steps; ++i) {
-
-    //     float t = (float)i / total_steps;
-
-    //     int ax = t1.ax + t * (t1.bx - t1.ax);
-    //     int ay = t1.ay + t * (t1.by - t1.ay);
-
-    //     int bx = t1.ax + t * (t1.cx - t1.ax);
-    //     int by = t1.ay + t * (t1.cy - t1.ay);
-
-    //     line(ax, ay, bx, by, framebuffer, red);
-    // }
+    triangleV2(t1, framebuffer, red);
+    triangleV2(t2, framebuffer, white);
+    triangleV2(t3, framebuffer, green);
 
     framebuffer.write_tga_file("framebuffer.tga");
     return 0;
