@@ -7,8 +7,8 @@
 #include "tgaimage.h"
 #include "model.h"
 
-constexpr int width  = 128;
-constexpr int height = 128;
+constexpr int width  = 600;
+constexpr int height = 600;
 
 constexpr TGAColor white   = {255, 255, 255, 255}; // BGRA order
 constexpr TGAColor green   = {  0, 255,   0, 255};
@@ -92,6 +92,7 @@ void triangle(Triangle &t, TGAImage &framebuffer, TGAColor color) {
 double triangle_area(int ax, int ay, int bx, int by, int cx, int cy) {
     return 0.5*((by-ay)*(bx+ax) + (cy-by)*(cx+bx) + (ay-cy)*(ax+cx));
 }
+
 void triangleV2(Triangle &t, TGAImage &framebuffer, const TGAColor &color) {
     int bbminx = std::min(std::min(t.ax, t.bx), t.cx); // bounding box for the triangle
     int bbminy = std::min(std::min(t.ay, t.by), t.cy); // defined by its top left and bottom right corners
@@ -99,7 +100,7 @@ void triangleV2(Triangle &t, TGAImage &framebuffer, const TGAColor &color) {
     int bbmaxy = std::max(std::max(t.ay, t.by), t.cy);
 
     double total_area = triangle_area(t.ax, t.ay, t.bx, t.by, t.cx, t.cy);
-
+    if (total_area<1) return;
 #pragma omp parallel for
     for (int x=bbminx; x<=bbmaxx; x++) {
         for (int y=bbminy; y<=bbmaxy; y++) {
@@ -132,16 +133,23 @@ TGAColor random_color_V2(std::uniform_int_distribution<> &random_number_generato
 
 
 int main(int argc, char** argv) {
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " obj/model.obj" << std::endl;
+        return 1;
+    }
 
+    Model model(argv[1]);
     TGAImage framebuffer(width, height, TGAImage::RGB);
 
-    Triangle t1 = {7, 45, 35, 100, 45,  60};
-    Triangle t2 = {120, 35, 90,   5, 45, 110};
-    Triangle t3 = {115, 83, 80,  90, 85, 120};
-
-    triangleV2(t1, framebuffer, red);
-    triangleV2(t2, framebuffer, white);
-    triangleV2(t3, framebuffer, green);
+    for (int i=0; i<model.nfaces(); i++) { // iterate through all triangles
+        auto [ax, ay] = project(model.vert(i, 0));
+        auto [bx, by] = project(model.vert(i, 1));
+        auto [cx, cy] = project(model.vert(i, 2));
+        TGAColor rnd;
+        for (int c=0; c<3; c++) rnd[c] = std::rand()%255;
+        Triangle t = {ax, ay, bx, by, cx, cy};
+        triangleV2(t, framebuffer, rnd);
+    }
 
     framebuffer.write_tga_file("framebuffer.tga");
     return 0;
