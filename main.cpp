@@ -93,21 +93,26 @@ double triangle_area(int ax, int ay, int bx, int by, int cx, int cy) {
     return 0.5*((by-ay)*(bx+ax) + (cy-by)*(cx+bx) + (ay-cy)*(ax+cx));
 }
 
-void triangleV2(Triangle &t, TGAImage &framebuffer, const TGAColor &color) {
-    int bbminx = std::min(std::min(t.ax, t.bx), t.cx); // bounding box for the triangle
-    int bbminy = std::min(std::min(t.ay, t.by), t.cy); // defined by its top left and bottom right corners
-    int bbmaxx = std::max(std::max(t.ax, t.bx), t.cx);
-    int bbmaxy = std::max(std::max(t.ay, t.by), t.cy);
+void triangle(int ax, int ay, int az, int bx, int by, int bz, int cx, int cy, int cz, TGAImage &framebuffer) {
+    int bbminx = std::min(std::min(ax, bx), cx); // bounding box for the triangle
+    int bbminy = std::min(std::min(ay, by), cy); // defined by its top left and bottom right corners
+    int bbmaxx = std::max(std::max(ax, bx), cx);
+    int bbmaxy = std::max(std::max(ay, by), cy);
 
-    double total_area = triangle_area(t.ax, t.ay, t.bx, t.by, t.cx, t.cy);
+    double total_area = triangle_area(ax, ay, bx, by, cx, cy);
     if (total_area<1) return;
+
 #pragma omp parallel for
     for (int x=bbminx; x<=bbmaxx; x++) {
         for (int y=bbminy; y<=bbmaxy; y++) {
-            double alpha = triangle_area(x, y, t.bx, t.by, t.cx, t.cy) / total_area;
-            double beta  = triangle_area(x, y, t.cx, t.cy, t.ax, t.ay) / total_area;
-            double gamma = triangle_area(x, y, t.ax, t.ay, t.bx, t.by) / total_area;
+            double alpha = triangle_area(x, y, bx, by, cx, cy) / total_area;
+            double beta  = triangle_area(x, y, cx, cy, ax, ay) / total_area;
+            double gamma = triangle_area(x, y, ax, ay, bx, by) / total_area;
             if (alpha<0 || beta<0 || gamma<0) continue;
+            float threshold = 0.1;
+            if (alpha > threshold && beta > threshold && gamma > threshold) continue;
+            // unsigned char z = static_cast<unsigned char>(alpha * az + beta * bz + gamma * cz);
+            TGAColor color{static_cast<uint8_t>(alpha * 255), static_cast<uint8_t>(beta * 255), static_cast<uint8_t>(gamma * 255), 255};
             framebuffer.set(x, y, color);
         }
     }
@@ -133,23 +138,15 @@ TGAColor random_color_V2(std::uniform_int_distribution<> &random_number_generato
 
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " obj/model.obj" << std::endl;
-        return 1;
-    }
-
-    Model model(argv[1]);
+    constexpr int width  = 64;
+    constexpr int height = 64;
     TGAImage framebuffer(width, height, TGAImage::RGB);
 
-    for (int i=0; i<model.nfaces(); i++) { // iterate through all triangles
-        auto [ax, ay] = project(model.vert(i, 0));
-        auto [bx, by] = project(model.vert(i, 1));
-        auto [cx, cy] = project(model.vert(i, 2));
-        TGAColor rnd;
-        for (int c=0; c<3; c++) rnd[c] = std::rand()%255;
-        Triangle t = {ax, ay, bx, by, cx, cy};
-        triangleV2(t, framebuffer, rnd);
-    }
+    int ax = 17, ay =  4, az =  13;
+    int bx = 55, by = 39, bz = 128;
+    int cx = 23, cy = 59, cz = 255;
+
+    triangle(ax, ay, az, bx, by, bz, cx, cy, cz, framebuffer);
 
     framebuffer.write_tga_file("framebuffer.tga");
     return 0;
