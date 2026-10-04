@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cassert>
 #include <iostream>
+#include <concepts>
 
 // template<int n> struct vec {
 //     double data[n] = {0};
@@ -9,18 +10,13 @@
 //     double  operator[](const int i) const { assert(i>=0 && i<n); return data[i]; }
 // };
 
-template<int n> std::ostream& operator<<(std::ostream& out, const vec<n>& v) {
-    for (int i=0; i<n; i++) out << v[i] << " ";
-    return out;
-}
+// template<> struct vec<3> {
+//     double x = 0, y = 0, z = 0;
+//     double& operator[](const int i)       { assert(i>=0 && i<3); return i ? (1==i ? y : z) : x; }
+//     double  operator[](const int i) const { assert(i>=0 && i<3); return i ? (1==i ? y : z) : x; }
+// };
 
-template<> struct vec<3> {
-    double x = 0, y = 0, z = 0;
-    double& operator[](const int i)       { assert(i>=0 && i<3); return i ? (1==i ? y : z) : x; }
-    double  operator[](const int i) const { assert(i>=0 && i<3); return i ? (1==i ? y : z) : x; }
-};
-
-typedef vec<3> vec3;
+// typedef vec<3> vec3;
 
 struct vec2 {
     double  data[2] = {0};
@@ -67,27 +63,35 @@ struct vec2 {
     friend constexpr vec2 operator*(vec2 a, const vec2& b) noexcept { return a *= b; }
     friend constexpr vec2 operator/(vec2 a, const vec2& b)          { return a /= b; }
 
-    // manque mult/div par scalaire ?
+    friend constexpr vec2 operator*(vec2 a, double scalar) noexcept { return a *= scalar; }
+    friend constexpr vec2 operator*(double scalar, vec2 a) noexcept { return a *= scalar; }
+    friend constexpr vec2 operator/(vec2 a, double scalar)          { return a /= scalar; }
 };
 
-template<int n> struct vec {
-    float data[n] = {0};
-    constexpr float& operator[](int i)       { assert(i>=0 && i<n); return data[i]; }
-    constexpr float  operator[](int i) const { assert(i>=0 && i<n); return data[i]; }
+template<typename T>
+concept FloatingPointOnly = std::same_as<T, float> || std::same_as<T, double>;
 
-    constexpr vec<n>& operator+=(const vec<n>& other) noexcept {
+template<int n, FloatingPointOnly T = double> struct vec {
+    static_assert(n > 0, "minimal size of vector is 1");
+
+    T data[n]{};
+
+    constexpr T& operator[](int i)       { assert(i>=0 && i<n); return data[i]; }
+    constexpr T  operator[](int i) const { assert(i>=0 && i<n); return data[i]; }
+
+    constexpr vec& operator+=(const vec& other) noexcept {
         for(int i = 0; i < n; ++i) { data[i] += other.data[i]; }
         return *this;
     }
-    constexpr vec<n>& operator-=(const vec<n>& other) noexcept {
+    constexpr vec& operator-=(const vec& other) noexcept {
         for(int i = 0; i < n; ++i) { data[i] -= other.data[i]; }
         return *this;
     }
-    constexpr vec<n>& operator*=(const vec<n>& other) noexcept {
+    constexpr vec& operator*=(const vec& other) noexcept {
         for(int i = 0; i < n; ++i) { data[i] *= other.data[i]; }
         return *this;
     }
-    constexpr vec<n>& operator/=(const vec<n>& other) {
+    constexpr vec& operator/=(const vec& other) {
         for(int i = 0; i < n; ++i) { 
             assert(other.data[i] != 0);
             data[i] /= other.data[i]; 
@@ -95,28 +99,35 @@ template<int n> struct vec {
         return *this;
     }
 
-    constexpr vec<n>& operator*=(float scalar) noexcept {
+    constexpr vec& operator*=(T scalar) noexcept {
         for(int i = 0; i < n; ++i) { data[i] *= scalar; }
         return *this;
     }
-    constexpr vec<n>& operator/=(float scalar) noexcept {
+    constexpr vec& operator/=(T scalar) noexcept {
+        assert(scalar != 0);
         for(int i = 0; i < n; ++i) { 
-            assert(scalar != 0);
             data[i] /= scalar; 
         }
         return *this;
     }
 
 
-    friend constexpr vec<n> operator+(vec<n> a, const vec<n>& b) noexcept { return a += b; }
-    friend constexpr vec<n> operator-(vec<n> a, const vec<n>& b) noexcept { return a -= b; }
-    friend constexpr vec<n> operator*(vec<n> a, const vec<n>& b) noexcept { return a *= b; }
-    friend constexpr vec<n> operator/(vec<n> a, const vec<n>& b)          { return a /= b; }
+    friend constexpr vec operator+(vec a, const vec& b) noexcept { return a += b; }
+    friend constexpr vec operator-(vec a, const vec& b) noexcept { return a -= b; }
+    friend constexpr vec operator*(vec a, const vec& b) noexcept { return a *= b; }
+    friend constexpr vec operator/(vec a, const vec& b)          { return a /= b; }
 
-    friend constexpr vec<n> operator*(vec<n> a, float scalar) noexcept { return a *= scalar; }
-    friend constexpr vec<n> operator/(vec<n> a, float scalar)          { return a /= scalar; }
+    friend constexpr vec operator*(vec a, T scalar) noexcept { return a *= scalar; }
+    friend constexpr vec operator*(T scalar, vec a) noexcept { return a *= scalar; }
+    friend constexpr vec operator/(vec a, T scalar)          { return a /= scalar; }
 
 };
+
+template<int n, FloatingPointOnly T>
+std::ostream& operator<<(std::ostream& out, const vec<n, T>& v) {
+    for (int i = 0; i < n; ++i) out << v[i] << " ";
+    return out;
+}
 
 struct mat2 {
     double data[4] = {0};
