@@ -27,8 +27,27 @@ struct vec2 {
     double& operator[](const int i)       { assert(i>=0 && i<2); return data[i]; }
     double  operator[](const int i) const { assert(i>=0 && i<2); return data[i]; }
 
-    vec2& operator*=(const vec2& other);
-    vec2& operator/=(const vec2& other);
+    constexpr vec2& operator+=(const vec2& other) noexcept {
+        data[0] += other.data[0];
+        data[1] += other.data[1];
+        return *this;
+    }
+    constexpr vec2& operator-=(const vec2& other) noexcept {
+        data[0] -= other.data[0];
+        data[1] -= other.data[1];
+        return *this;
+    }
+    constexpr vec2& operator*=(const vec2& other) noexcept {
+        data[0] *= other.data[0];
+        data[1] *= other.data[1];
+        return *this;
+    }
+    constexpr vec2& operator/=(const vec2& other) { 
+        assert(other.data[0] != 0 && other.data[1] != 0);
+        data[0] /= other.data[0];
+        data[1] /= other.data[1];
+        return *this;
+    }
 
     friend vec2 operator+(vec2 a, vec2& b);
     friend vec2 operator-(vec2 a, vec2& b);
