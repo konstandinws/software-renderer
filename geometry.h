@@ -24,8 +24,8 @@ typedef vec<3> vec3;
 
 struct vec2 {
     double  data[2] = {0};
-    double& operator[](const int i)       { assert(i>=0 && i<2); return data[i]; }
-    double  operator[](const int i) const { assert(i>=0 && i<2); return data[i]; }
+    constexpr double& operator[](const int i)       { assert(i>=0 && i<2); return data[i]; }
+    constexpr double  operator[](const int i) const { assert(i>=0 && i<2); return data[i]; }
 
     constexpr vec2& operator+=(const vec2& other) noexcept {
         data[0] += other.data[0];
@@ -49,10 +49,23 @@ struct vec2 {
         return *this;
     }
 
-    friend vec2 operator+(vec2 a, vec2& b);
-    friend vec2 operator-(vec2 a, vec2& b);
-    friend vec2 operator*(vec2 a, vec2& b);
-    friend vec2 operator/(vec2 a, vec2& b);
+    constexpr vec2& operator*=(const double& scalar) noexcept {
+        data[0] *= scalar;
+        data[1] *= scalar;
+        return *this; 
+    }
+
+    constexpr vec2& operator*=(const double& scalar) {
+        assert(scalar != 0);
+        data[0] /= scalar;
+        data[1] /= scalar;
+        return *this; 
+    }
+
+    friend constexpr vec2 operator+(vec2 a, const vec2& b) noexcept { return a += b; }
+    friend constexpr vec2 operator-(vec2 a, const vec2& b) noexcept { return a -= b; }
+    friend constexpr vec2 operator*(vec2 a, const vec2& b) noexcept { return a *= b; }
+    friend constexpr vec2 operator/(vec2 a, const vec2& b) { return a /= b; }
 };
 
 struct mat2 {
