@@ -18,55 +18,55 @@
 
 // typedef vec<3> vec3;
 
-struct vec2 {
-    double  data[2] = {0};
-    constexpr double& operator[](const int i)       { assert(i>=0 && i<2); return data[i]; }
-    constexpr double  operator[](const int i) const { assert(i>=0 && i<2); return data[i]; }
+// struct vec2 {
+//     double  data[2] = {0};
+//     constexpr double& operator[](const int i)       { assert(i>=0 && i<2); return data[i]; }
+//     constexpr double  operator[](const int i) const { assert(i>=0 && i<2); return data[i]; }
 
-    constexpr vec2& operator+=(const vec2& other) noexcept {
-        data[0] += other.data[0];
-        data[1] += other.data[1];
-        return *this;
-    }
-    constexpr vec2& operator-=(const vec2& other) noexcept {
-        data[0] -= other.data[0];
-        data[1] -= other.data[1];
-        return *this;
-    }
-    constexpr vec2& operator*=(const vec2& other) noexcept {
-        data[0] *= other.data[0];
-        data[1] *= other.data[1];
-        return *this;
-    }
-    constexpr vec2& operator/=(const vec2& other) { 
-        assert(other.data[0] != 0 && other.data[1] != 0);
-        data[0] /= other.data[0];
-        data[1] /= other.data[1];
-        return *this;
-    }
+//     constexpr vec2& operator+=(const vec2& other) noexcept {
+//         data[0] += other.data[0];
+//         data[1] += other.data[1];
+//         return *this;
+//     }
+//     constexpr vec2& operator-=(const vec2& other) noexcept {
+//         data[0] -= other.data[0];
+//         data[1] -= other.data[1];
+//         return *this;
+//     }
+//     constexpr vec2& operator*=(const vec2& other) noexcept {
+//         data[0] *= other.data[0];
+//         data[1] *= other.data[1];
+//         return *this;
+//     }
+//     constexpr vec2& operator/=(const vec2& other) { 
+//         assert(other.data[0] != 0 && other.data[1] != 0);
+//         data[0] /= other.data[0];
+//         data[1] /= other.data[1];
+//         return *this;
+//     }
 
-    constexpr vec2& operator*=(double scalar) noexcept {
-        data[0] *= scalar;
-        data[1] *= scalar;
-        return *this; 
-    }
+//     constexpr vec2& operator*=(double scalar) noexcept {
+//         data[0] *= scalar;
+//         data[1] *= scalar;
+//         return *this; 
+//     }
 
-    constexpr vec2& operator/=(double scalar) {
-        assert(scalar != 0.0);
-        data[0] /= scalar;
-        data[1] /= scalar;
-        return *this; 
-    }
+//     constexpr vec2& operator/=(double scalar) {
+//         assert(scalar != 0.0);
+//         data[0] /= scalar;
+//         data[1] /= scalar;
+//         return *this; 
+//     }
 
-    friend constexpr vec2 operator+(vec2 a, const vec2& b) noexcept { return a += b; }
-    friend constexpr vec2 operator-(vec2 a, const vec2& b) noexcept { return a -= b; }
-    friend constexpr vec2 operator*(vec2 a, const vec2& b) noexcept { return a *= b; }
-    friend constexpr vec2 operator/(vec2 a, const vec2& b)          { return a /= b; }
+//     friend constexpr vec2 operator+(vec2 a, const vec2& b) noexcept { return a += b; }
+//     friend constexpr vec2 operator-(vec2 a, const vec2& b) noexcept { return a -= b; }
+//     friend constexpr vec2 operator*(vec2 a, const vec2& b) noexcept { return a *= b; }
+//     friend constexpr vec2 operator/(vec2 a, const vec2& b)          { return a /= b; }
 
-    friend constexpr vec2 operator*(vec2 a, double scalar) noexcept { return a *= scalar; }
-    friend constexpr vec2 operator*(double scalar, vec2 a) noexcept { return a *= scalar; }
-    friend constexpr vec2 operator/(vec2 a, double scalar)          { return a /= scalar; }
-};
+//     friend constexpr vec2 operator*(vec2 a, double scalar) noexcept { return a *= scalar; }
+//     friend constexpr vec2 operator*(double scalar, vec2 a) noexcept { return a *= scalar; }
+//     friend constexpr vec2 operator/(vec2 a, double scalar)          { return a /= scalar; }
+// };
 
 template<typename T>
 concept FloatingPointOnly = std::same_as<T, float> || std::same_as<T, double>;
@@ -129,19 +129,77 @@ std::ostream& operator<<(std::ostream& out, const vec<n, T>& v) {
     return out;
 }
 
-struct mat2 {
-    double data[4] = {0};
+template<int nrows, int ncols, FloatingPointOnly T = double>
+struct mat {
+    static_assert(nrows > 0 && ncols > 0, "Dimensions minimales de la matrice : 1x1");
 
-    mat2& operator*=(const mat2& other);
+    // Stockage contigu par lignes (row-major)
+    vec<ncols, T> rows[nrows]{};
 
-    mat2& transpose();
-    mat2& inversion();
+    // Accès ligne par ligne : permet la syntaxe naturelle m[i][j]
+    constexpr vec<ncols, T>& operator[](int i) noexcept {
+        assert(i >= 0 && i < nrows);
+        return rows[i];
+    }
+    constexpr const vec<ncols, T>& operator[](int i) const noexcept {
+        assert(i >= 0 && i < nrows);
+        return rows[i];
+    }
 
-    friend mat2 operator*(mat2 a, mat2 b);
+    // --- Matrice Identité (uniquement pour les matrices carrées) ---
+    static constexpr mat identity() noexcept requires (nrows == ncols) {
+        mat res{};
+        for (int i = 0; i < nrows; ++i) {
+            res[i][i] = static_cast<T>(1);
+        }
+        return res;
+    }
 
-    // ajouter l'operation matrice x vecteur
+    // --- Transposition : (nrows x ncols) devient (ncols x nrows) ---
+    constexpr mat<ncols, nrows, T> transpose() const noexcept {
+        mat<ncols, nrows, T> res{};
+        for (int i = 0; i < nrows; ++i) {
+            for (int j = 0; j < ncols; ++j) {
+                res[j][i] = rows[i][j];
+            }
+        }
+        return res;
+    }
+
+    // --- Opération Matrice * Vecteur : (nrows x ncols) * (ncols) -> (nrows) ---
+    constexpr vec<nrows, T> operator*(const vec<ncols, T>& v) const noexcept {
+        vec<nrows, T> res{};
+        for (int i = 0; i < nrows; ++i) {
+            T sum = 0;
+            for (int j = 0; j < ncols; ++j) {
+                sum += rows[i][j] * v[j];
+            }
+            res[i] = sum;
+        }
+        return res;
+    }
+
+    // --- operator*= (réservé aux matrices carrées) ---
+    constexpr mat& operator*=(const mat<ncols, ncols, T>& other) noexcept requires (nrows == ncols) {
+        *this = *this * other;
+        return *this;
+    }
 };
 
-struct mat3 {
+// --- Produit Matriciel Rapide : (R x K) * (K x C) -> (R x C) ---
+// Parcours i-k-j : vectorisation SIMD maximale et zéro cache miss
+template<int R, int K, int C, FloatingPointOnly T>
+constexpr mat<R, C, T> operator*(const mat<R, K, T>& a, const mat<K, C, T>& b) noexcept {
+    mat<R, C, T> res{};
 
-};
+    for (int i = 0; i < R; ++i) {
+        for (int k = 0; k < K; ++k) {
+            const T a_ik = a[i][k];
+            // Cette boucle interne opère sur la mémoire contiguë de res[i] et b[k]
+            for (int j = 0; j < C; ++j) {
+                res[i][j] += a_ik * b[k][j];
+            }
+        }
+    }
+    return res;
+}

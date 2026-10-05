@@ -3,6 +3,7 @@
 #include <ctime>
 #include <tuple>
 #include <array>
+#include <numbers>
 
 #include "tgaimage.h"
 #include "model.h"
@@ -39,10 +40,10 @@ void line(int ax, int ay, int bx, int by, TGAImage &framebuffer, const TGAColor 
     }
 }
 
-std::tuple<int,int,int> project(vec3 v) { // First of all, (x,y) is an orthogonal projection of the vector (x,y,z).
-    return { (v.x + 1.) *  width/2,   // Second, since the input models are scaled to have fit in the [-1,1]^3 world coordinates,
-             (v.y + 1.) * height/2,
-             (v.z + 1.) *   255./2 }; // we want to shift the vector (x,y) and then scale it to span the entire screen.
+std::tuple<int,int,int> project(vec<3> v) { // First of all, (x,y) is an orthogonal projection of the vector (x,y,z).
+    return { (v[0] + 1.) *  width/2,   // Second, since the input models are scaled to have fit in the [-1,1]^3 world coordinates,
+             (v[1] + 1.) * height/2,
+             (v[2] + 1.) *   255./2 }; // we want to shift the vector (x,y) and then scale it to span the entire screen.
 }
 
 struct Triangle {
@@ -139,6 +140,12 @@ TGAColor random_color_V2(std::uniform_int_distribution<> &random_number_generato
     };
 }
 
+vec<3> rot(vec<3> v) {
+    constexpr double a = std::numbers::pi/6;
+    mat<3,3> Ry = {{{std::cos(a), 0, std::sin(a)}, {0,1,0}, {-std::sin(a), 0, std::cos(a)}}};
+    return Ry*v;
+}
+
 
 int main(int argc, char** argv) {
     if (argc != 2) {
@@ -151,9 +158,9 @@ int main(int argc, char** argv) {
     TGAImage     zbuffer(width, height, TGAImage::GRAYSCALE);
 
     for (int i=0; i<model.nfaces(); i++) { // iterate through all triangles
-        auto [ax, ay, az] = project(model.vert(i, 0));
-        auto [bx, by, bz] = project(model.vert(i, 1));
-        auto [cx, cy, cz] = project(model.vert(i, 2));
+        auto [ax, ay, az] = project(rot(model.vert(i, 0)));
+        auto [bx, by, bz] = project(rot(model.vert(i, 1)));
+        auto [cx, cy, cz] = project(rot(model.vert(i, 2)));
         TGAColor rnd;
         for (int c=0; c<3; c++) rnd[c] = std::rand()%255;
         triangle(ax, ay, az, bx, by, bz, cx, cy, cz, zbuffer, framebuffer, rnd);
