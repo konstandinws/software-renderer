@@ -311,6 +311,10 @@
 
 #include <limits>
 #include <algorithm>
+#include <cstdint>
+#include <string>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
 #include "geometry.h"
 #include "model.h"
 #include "tgaimage.h"
@@ -361,33 +365,108 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    constexpr int width  = 800;    // output image size
+    constexpr int width  = 800;      // window size
     constexpr int height = 800;
-    constexpr vec3    eye{-1,0,2}; // camera position
-    constexpr vec3 center{0,0,0};  // camera direction
-    constexpr vec3     up{0,1,0};  // camera up vector
+    constexpr vec3 center{0,0,0};    // point regardé par la caméra
+    constexpr vec3     up{0,1,0};    // camera up vector
+    constexpr double radius0 = 3.;   // distance initiale caméra–centre
 
-    lookat(eye, center, up);                              // build the ModelView   matrix
-    perspective(norm(eye-center));                        // build the Perspective matrix
-    viewport(width/16, height/16, width*7/8, height*7/8); // build the Viewport    matrix
+    std::vector<Model> models;       // chargés une seule fois
+    for (int m=1; m<argc; m++) models.emplace_back(argv[m]);
 
-    TGAImage framebuffer(width, height, TGAImage::RGB);
-    std::vector<double> zbuffer(width*height, -std::numeric_limits<double>::max());
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        std::cerr << "SDL_Init: " << SDL_GetError() << std::endl;
+        return 1;
+    }
+    SDL_Window*   window   = nullptr;
+    SDL_Renderer* renderer = nullptr;
+    if (!SDL_CreateWindowAndRenderer("tinyRenderer", width, height, 0, &window, &renderer)) {
+        std::cerr << "SDL_CreateWindowAndRenderer: " << SDL_GetError() << std::endl;
+        SDL_Quit();
+        return 1;
+    }
+    SDL_SetRenderVSync(renderer, 1);
+    SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, width, height);
+    std::vector<std::uint32_t> pixels(width*height); // copie du framebuffer au format de la texture
 
-    for (int m=1; m<argc; m++) { // iterate through all input objects
-        Model model(argv[m]);
-        for (int i=0; i<model.nfaces(); i++) { // iterate through all triangles
-            vec4 clip[3];
-            for (int d : {0,1,2}) {            // assemble the primitive
-                vec3 v = model.vert(i, d);
-                clip[d] = Perspective * ModelView * vec4{v.x, v.y, v.z, 1.};
+    double yaw = 0, pitch = 0, radius = radius0;      // position de la caméra en coordonnées sphériques autour de center
+    std::uint64_t last = SDL_GetTicks(), fps_timer = last;
+    int fps_frames = 0;
+    bool running = true;
+
+    while (running) {
+        // 1. Entrées : clic gauche + glisser = tourner, molette = zoom, flèches = tourner, Échap = quitter
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_EVENT_QUIT) running = false;
+            if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) running = false;
+            if (e.type == SDL_EVENT_MOUSE_MOTION && (e.motion.state & SDL_BUTTON_LMASK)) {
+                yaw   -= e.motion.xrel * 0.01;
+                pitch += e.motion.yrel * 0.01;
             }
-            TGAColor rnd;
-            for (int c=0; c<3; c++) rnd[c] = std::rand()%255;
-            rasterize(clip, zbuffer, framebuffer, rnd); // rasterize the primitive
+            if (e.type == SDL_EVENT_MOUSE_WHEEL) radius *= std::pow(0.9, e.wheel.y);
+        }
+
+        std::uint64_t now = SDL_GetTicks();
+        double dt = (now - last) / 1000.; // secondes écoulées depuis l'image précédente
+        last = now;
+        const bool* keys = SDL_GetKeyboardState(nullptr);
+        if (keys[SDL_SCANCODE_LEFT])  yaw   -= 2*dt;
+        if (keys[SDL_SCANCODE_RIGHT]) yaw   += 2*dt;
+        if (keys[SDL_SCANCODE_UP])    pitch += 2*dt;
+        if (keys[SDL_SCANCODE_DOWN])  pitch -= 2*dt;
+
+        pitch  = std::clamp(pitch, -1.5, 1.5);  // jamais à la verticale : up serait parallèle à eye-center
+        radius = std::clamp(radius, 1.5, 10.);  // jamais dans le modèle : il n'y a pas de clipping
+
+        // 2. Caméra
+        vec3 eye = center + radius * vec3{std::cos(pitch)*std::sin(yaw), std::sin(pitch), std::cos(pitch)*std::cos(yaw)};
+        lookat(eye, center, up);
+        perspective(norm(eye-center));
+        const int size = static_cast<int>(width*7/8 * radius0/radius); // taille apparente inversement proportionnelle à la distance
+        viewport((width-size)/2, (height-size)/2, size, size);
+
+        // 3. Rendu, comme pour une image TGA
+        TGAImage framebuffer(width, height, TGAImage::RGB);
+        std::vector<double> zbuffer(width*height, -std::numeric_limits<double>::max());
+        std::srand(0); // mêmes couleurs à chaque image, sinon ça clignote
+        for (const Model& model : models) {
+            for (int i=0; i<model.nfaces(); i++) {
+                vec4 clip[3];
+                for (int d : {0,1,2}) {
+                    vec3 v = model.vert(i, d);
+                    clip[d] = Perspective * ModelView * vec4{v.x, v.y, v.z, 1.};
+                }
+                TGAColor rnd;
+                for (int c=0; c<3; c++) rnd[c] = std::rand()%255;
+                rasterize(clip, zbuffer, framebuffer, rnd);
+            }
+        }
+
+        // 4. Affichage : TGAImage (BGR, origine en bas) -> texture SDL (ARGB, origine en haut)
+        for (int y=0; y<height; y++)
+            for (int x=0; x<width; x++) {
+                TGAColor c = framebuffer.get(x, y);
+                pixels[(height-1-y)*width + x] = 0xFF000000u | c[2]<<16 | c[1]<<8 | c[0];
+            }
+        SDL_UpdateTexture(texture, nullptr, pixels.data(), width*sizeof(std::uint32_t));
+        SDL_RenderClear(renderer);
+        SDL_RenderTexture(renderer, texture, nullptr, nullptr);
+        SDL_RenderPresent(renderer);
+
+        // FPS dans le titre de la fenêtre
+        fps_frames++;
+        if (now - fps_timer >= 1000) {
+            std::string title = "tinyRenderer - " + std::to_string(fps_frames) + " fps";
+            SDL_SetWindowTitle(window, title.c_str());
+            fps_frames = 0;
+            fps_timer  = now;
         }
     }
 
-    framebuffer.write_tga_file("framebuffer.tga");
+    SDL_DestroyTexture(texture);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
     return 0;
 }
