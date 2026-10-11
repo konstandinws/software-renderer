@@ -311,6 +311,9 @@
 
 #include <limits>
 #include <algorithm>
+#include <numbers>
+#include <string>
+#include <filesystem>
 #include "geometry.h"
 #include "model.h"
 #include "tgaimage.h"
@@ -361,33 +364,46 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    constexpr int width  = 800;    // output image size
+    constexpr int width  = 800;
     constexpr int height = 800;
-    constexpr vec3    eye{-1,0,2}; // camera position
-    constexpr vec3 center{0,0,0};  // camera direction
-    constexpr vec3     up{0,1,0};  // camera up vector
+    constexpr vec3 center{0,0,0};
+    constexpr vec3     up{0,1,0};
+    constexpr double radius  = 2.;  // distance caméra–centre
+    constexpr int    nframes = 36;  // une image tous les 10°
 
-    lookat(eye, center, up);                              // build the ModelView   matrix
-    perspective(norm(eye-center));                        // build the Perspective matrix
-    viewport(width/16, height/16, width*7/8, height*7/8); // build the Viewport    matrix
+    std::vector<Model> models;      // chargés une seule fois
+    for (int m=1; m<argc; m++) models.emplace_back(argv[m]);
 
-    TGAImage framebuffer(width, height, TGAImage::RGB);
-    std::vector<double> zbuffer(width*height, -std::numeric_limits<double>::max());
+    const std::string folder = "frames";
+    std::filesystem::create_directories(folder); // ne fait rien si le dossier existe déjà
 
-    for (int m=1; m<argc; m++) { // iterate through all input objects
-        Model model(argv[m]);
-        for (int i=0; i<model.nfaces(); i++) { // iterate through all triangles
-            vec4 clip[3];
-            for (int d : {0,1,2}) {            // assemble the primitive
-                vec3 v = model.vert(i, d);
-                clip[d] = Perspective * ModelView * vec4{v.x, v.y, v.z, 1.};
+    for (int frame=0; frame<nframes; frame++) {
+        double angle = 2*std::numbers::pi * frame / nframes;
+        vec3 eye = center + vec3{radius*std::sin(angle), 0, radius*std::cos(angle)};
+
+        lookat(eye, center, up);
+        perspective(norm(eye-center));
+        viewport(width/16, height/16, width*7/8, height*7/8);
+
+        TGAImage framebuffer(width, height, TGAImage::RGB);
+        std::vector<double> zbuffer(width*height, -std::numeric_limits<double>::max());
+
+        std::srand(0); // mêmes couleurs à chaque image, sinon ça clignote
+        for (const Model& model : models) {
+            for (int i=0; i<model.nfaces(); i++) {
+                vec4 clip[3];
+                for (int d : {0,1,2}) {
+                    vec3 v = model.vert(i, d);
+                    clip[d] = Perspective * ModelView * vec4{v.x, v.y, v.z, 1.};
+                }
+                TGAColor rnd;
+                for (int c=0; c<3; c++) rnd[c] = std::rand()%255;
+                rasterize(clip, zbuffer, framebuffer, rnd);
             }
-            TGAColor rnd;
-            for (int c=0; c<3; c++) rnd[c] = std::rand()%255;
-            rasterize(clip, zbuffer, framebuffer, rnd); // rasterize the primitive
         }
-    }
 
-    framebuffer.write_tga_file("framebuffer.tga");
+        std::string name = folder + "/frame_" + std::to_string(frame) + ".tga";
+        framebuffer.write_tga_file(name, true, false);
+    }
     return 0;
 }
