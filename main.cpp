@@ -95,29 +95,81 @@ double triangle_area(int ax, int ay, int bx, int by, int cx, int cy) {
     return 0.5*((by-ay)*(bx+ax) + (cy-by)*(cx+bx) + (ay-cy)*(ax+cx));
 }
 
-void triangle(int ax, int ay, int az, int bx, int by, int bz, int cx, int cy, int cz, TGAImage &zbuffer, TGAImage &framebuffer, TGAColor color) {
-    int bbminx = std::min(std::min(ax, bx), cx); // bounding box for the triangle
-    int bbminy = std::min(std::min(ay, by), cy); // defined by its top left and bottom right corners
-    int bbmaxx = std::max(std::max(ax, bx), cx);
-    int bbmaxy = std::max(std::max(ay, by), cy);
+// void triangle(int ax, int ay, int az, int bx, int by, int bz, int cx, int cy, int cz, TGAImage &zbuffer, TGAImage &framebuffer, TGAColor color) {
+//     int bbminx = std::min(std::min(ax, bx), cx); // bounding box for the triangle
+//     int bbminy = std::min(std::min(ay, by), cy); // defined by its top left and bottom right corners
+//     int bbmaxx = std::max(std::max(ax, bx), cx);
+//     int bbmaxy = std::max(std::max(ay, by), cy);
 
-    double total_area = triangle_area(ax, ay, bx, by, cx, cy);
-    if (total_area<1) return;
+//     double total_area = triangle_area(ax, ay, bx, by, cx, cy);
+//     if (total_area<1) return;
 
-#pragma omp parallel for
-    for (int x=bbminx; x<=bbmaxx; x++) {
-        for (int y=bbminy; y<=bbmaxy; y++) {
-            double alpha = triangle_area(x, y, bx, by, cx, cy) / total_area;
-            double beta  = triangle_area(x, y, cx, cy, ax, ay) / total_area;
-            double gamma = triangle_area(x, y, ax, ay, bx, by) / total_area;
-            if (alpha<0 || beta<0 || gamma<0) continue;
-            // float threshold = 0.1;
-            // if (alpha > threshold && beta > threshold && gamma > threshold) continue;
-            unsigned char z = static_cast<unsigned char>(alpha * az + beta * bz + gamma * cz);
-            // TGAColor color{static_cast<uint8_t>(alpha * 255), static_cast<uint8_t>(beta * 255), static_cast<uint8_t>(gamma * 255), 255};
-            if (z <= zbuffer.get(x, y)[0]) continue;
-            zbuffer.set(x, y, {z});
-            framebuffer.set(x, y, color);
+// #pragma omp parallel for
+//     for (int x=bbminx; x<=bbmaxx; x++) {
+//         for (int y=bbminy; y<=bbmaxy; y++) {
+//             double alpha = triangle_area(x, y, bx, by, cx, cy) / total_area;
+//             double beta  = triangle_area(x, y, cx, cy, ax, ay) / total_area;
+//             double gamma = triangle_area(x, y, ax, ay, bx, by) / total_area;
+//             if (alpha<0 || beta<0 || gamma<0) continue;
+//             // float threshold = 0.1;
+//             // if (alpha > threshold && beta > threshold && gamma > threshold) continue;
+//             unsigned char z = static_cast<unsigned char>(alpha * az + beta * bz + gamma * cz);
+//             // TGAColor color{static_cast<uint8_t>(alpha * 255), static_cast<uint8_t>(beta * 255), static_cast<uint8_t>(gamma * 255), 255};
+//             if (z <= zbuffer.get(x, y)[0]) continue;
+//             zbuffer.set(x, y, {z});
+//             framebuffer.set(x, y, color);
+//         }
+//     }
+// }
+
+#include <vector>
+#include <limits>
+#include <algorithm>
+
+// Fonction barycentrique compacte retournant votre struct vec<3>
+constexpr vec<3> barycentric(const vec<3>& a, const vec<3>& b, const vec<3>& c, double px, double py) noexcept {
+    double denom = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
+    if (std::abs(denom) < 1e-6) return {-1.0, 1.0, 1.0}; // Triangle dégénéré
+
+    double alpha = ((b[1] - c[1]) * (px - c[0]) + (c[0] - b[0]) * (py - c[1])) / denom;
+    double beta  = ((c[1] - a[1]) * (px - c[0]) + (a[0] - c[0]) * (py - c[1])) / denom;
+    double gamma = 1.0 - alpha - beta;
+
+    return {alpha, beta, gamma};
+}
+
+void triangle(const vec<3>& a, const vec<3>& b, const vec<3>& c,
+              std::vector<double>& zbuffer,
+              TGAImage& framebuffer,
+              const TGAColor& color) 
+{
+    int width  = framebuffer.width();
+    int height = framebuffer.height();
+
+    // Bounding box bornée aux limites réelles de l'écran (anti-crash)
+    int bbminx = std::max(0, static_cast<int>(std::floor(std::min({a[0], b[0], c[0]}))));
+    int bbminy = std::max(0, static_cast<int>(std::floor(std::min({a[1], b[1], c[1]}))));
+    int bbmaxx = std::min(width  - 1, static_cast<int>(std::ceil(std::max({a[0], b[0], c[0]}))));
+    int bbmaxy = std::min(height - 1, static_cast<int>(std::ceil(std::max({a[1], b[1], c[1]}))));
+
+    if (bbminx > bbmaxx || bbminy > bbmaxy) return;
+
+    // Parcours mémoire optimal : Y à l'extérieur, X à l'intérieur
+    for (int y = bbminy; y <= bbmaxy; ++y) {
+        for (int x = bbminx; x <= bbmaxx; ++x) {
+            vec<3> bc = barycentric(a, b, c, x + 0.5, y + 0.5);
+
+            // Pixel en dehors du triangle
+            if (bc[0] < 0.0 || bc[1] < 0.0 || bc[2] < 0.0) continue;
+
+            // Interpolation du Z en double précision (plus aucun overflow 8-bit !)
+            double z = bc[0] * a[2] + bc[1] * b[2] + bc[2] * c[2];
+
+            int idx = x + y * width;
+            if (z > zbuffer[idx]) {
+                zbuffer[idx] = z;
+                framebuffer.set(x, y, color);
+            }
         }
     }
 }
@@ -146,27 +198,107 @@ vec<3> rot(vec<3> v) {
     return Ry*v;
 }
 
+vec<3> persp(vec<3> v) {
+    constexpr double c = 3.;
+    return v / (1-v[2]/c);
+}
 
-int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " obj/model.obj" << std::endl;
-        return 1;
+
+// int main(int argc, char** argv) {
+//     if (argc != 2) {
+//         std::cerr << "Usage: " << argv[0] << " obj/model.obj" << std::endl;
+//         return 1;
+//     }
+
+//     Model model(argv[1]);
+//     TGAImage framebuffer(width, height, TGAImage::RGB);
+//     TGAImage     zbuffer(width, height, TGAImage::GRAYSCALE);
+
+//     for (int i=0; i<model.nfaces(); i++) { // iterate through all triangles
+//         auto [ax, ay, az] = project(persp(rot(model.vert(i, 0))));
+//         auto [bx, by, bz] = project(persp(rot(model.vert(i, 1))));
+//         auto [cx, cy, cz] = project(persp(rot(model.vert(i, 2))));
+//         TGAColor rnd;
+//         for (int c=0; c<3; c++) rnd[c] = std::rand()%255;
+//         triangle(ax, ay, az, bx, by, bz, cx, cy, cz, zbuffer, framebuffer, rnd);
+//     }
+
+//     framebuffer.write_tga_file("framebuffer.tga");
+//     zbuffer.write_tga_file("zbuffer.tga");
+//     return 0;
+// }
+
+void save_zbuffer_image(const std::vector<double>& zbuffer, int width, int height, const char* filename) {
+    TGAImage img(width, height, TGAImage::GRAYSCALE);
+
+    double min_z =  std::numeric_limits<double>::infinity();
+    double max_z = -std::numeric_limits<double>::infinity();
+
+    for (double z : zbuffer) {
+        if (z > -std::numeric_limits<double>::infinity() / 2.0) {
+            min_z = std::min(min_z, z);
+            max_z = std::max(max_z, z);
+        }
     }
 
-    Model model(argv[1]);
-    TGAImage framebuffer(width, height, TGAImage::RGB);
-    TGAImage     zbuffer(width, height, TGAImage::GRAYSCALE);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            double z = zbuffer[x + y * width];
+            if (z > -std::numeric_limits<double>::infinity() / 2.0 && max_z > min_z) {
+                auto val = static_cast<std::uint8_t>(255.0 * (z - min_z) / (max_z - min_z));
+                img.set(x, y, TGAColor(val));
+            } else {
+                img.set(x, y, TGAColor(0)); // Fond noir
+            }
+        }
+    }
 
-    for (int i=0; i<model.nfaces(); i++) { // iterate through all triangles
-        auto [ax, ay, az] = project(rot(model.vert(i, 0)));
-        auto [bx, by, bz] = project(rot(model.vert(i, 1)));
-        auto [cx, cy, cz] = project(rot(model.vert(i, 2)));
-        TGAColor rnd;
-        for (int c=0; c<3; c++) rnd[c] = std::rand()%255;
-        triangle(ax, ay, az, bx, by, bz, cx, cy, cz, zbuffer, framebuffer, rnd);
+    img.write_tga_file(filename);
+}
+
+int main() {
+    constexpr int width  = 800;
+    constexpr int height = 800;
+
+    TGAImage framebuffer(width, height, TGAImage::RGB);
+
+    // Initialisation du Z-buffer avec -infini
+    std::vector<double> zbuffer(width * height, -std::numeric_limits<double>::infinity());
+
+    // 1. Matrice de rotation Y (45 degrés par exemple)
+    double angle = 3.141592653589793 / 4.0;
+    auto Ry = mat<3, 3>::rotation_y(angle);
+
+    // 2. Boucle sur les triangles du modèle
+    for (int i = 0; i < model->nfaces(); ++i) {
+        vec<3> screen_pts[3];
+
+        for (int j = 0; j < 3; ++j) {
+            vec<3> world_pt = model->vert(i, j); // Sommet 3D du modèle dans [-1, 1]^3
+
+            // A. Rotation
+            vec<3> rotated = Ry * world_pt;
+
+            // B. Perspective (votre fonction)
+            vec<3> projected = persp(rotated);
+
+            // C. Transformation vers l'espace écran (Viewport)
+            screen_pts[j] = {
+                (projected[0] + 1.0) * 0.5 * (width  - 1),
+                (projected[1] + 1.0) * 0.5 * (height - 1),
+                projected[2] // Profondeur flottante conservée intacte
+            };
+        }
+
+        // D. Rasterization avec zbuffer flottant
+        TGAColor color = TGAColor(rand() % 255, rand() % 255, rand() % 255, 255);
+        triangle(screen_pts[0], screen_pts[1], screen_pts[2], zbuffer, framebuffer, color);
     }
 
     framebuffer.write_tga_file("framebuffer.tga");
-    zbuffer.write_tga_file("zbuffer.tga");
+
+    // Optionnel : Sauvegarder une image du Z-buffer normalisé pour le débogage
+    save_zbuffer_image(zbuffer, width, height, "zbuffer.tga");
+
     return 0;
 }
