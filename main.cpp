@@ -360,6 +360,27 @@ void rasterize(const vec4 clip[3], std::vector<double> &zbuffer, TGAImage &frame
     }
 }
 
+// Coupe le triangle par le plan proche (w = near) avant de le rasteriser. w vaut profondeur/focal devant la caméra :
+// un sommet avec w <= 0 est derrière elle, et la division par w donnerait un triangle retourné ou immense.
+// Un triangle coupé par un plan donne un polygone de 3 ou 4 sommets, qu'on redécoupe en 1 ou 2 triangles.
+void clip_and_rasterize(const vec4 clip[3], std::vector<double> &zbuffer, TGAImage &framebuffer, const TGAColor color) {
+    constexpr double near = 0.05;
+    vec4 poly[4];
+    int n = 0;
+    for (int i=0; i<3; i++) {
+        const vec4 &a = clip[i], &b = clip[(i+1)%3];
+        if (a.w >= near) poly[n++] = a;           // a est devant le plan : on le garde
+        if ((a.w >= near) != (b.w >= near)) {     // l'arête [a,b] traverse le plan : on ajoute le point d'intersection
+            double t = (near - a.w) / (b.w - a.w);
+            poly[n++] = a + (b - a)*t;
+        }
+    }
+    for (int i=1; i+1<n; i++) {                   // découpage en éventail, l'ordre des sommets (et donc le backface culling) est conservé
+        const vec4 tri[3] = { poly[0], poly[i], poly[i+1] };
+        rasterize(tri, zbuffer, framebuffer, color);
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " obj/model.obj" << std::endl;
@@ -368,9 +389,8 @@ int main(int argc, char** argv) {
 
     constexpr int width  = 800;      // window size
     constexpr int height = 800;
-    constexpr vec3 center{0,0,0};    // point regardé par la caméra
-    constexpr vec3     up{0,1,0};    // camera up vector
-    constexpr double radius0 = 3.;   // distance initiale caméra–centre
+    constexpr vec3 up{0,1,0};        // camera up vector
+    constexpr double focal = 1.732;  // distance eye–center : règle le champ de vision, 2*atan(1/focal) ≈ 60°
 
     std::vector<Model> models;       // chargés une seule fois
     for (int m=1; m<argc; m++) models.emplace_back(argv[m]);
@@ -390,42 +410,54 @@ int main(int argc, char** argv) {
     SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, width, height);
     std::vector<std::uint32_t> pixels(width*height); // copie du framebuffer au format de la texture
 
-    double yaw = 0, pitch = 0, radius = radius0;      // position de la caméra en coordonnées sphériques autour de center
+    vec3 eye{0,0,3};                 // position de la caméra dans le monde
+    double yaw = 0, pitch = 0;       // direction du regard : yaw = gauche/droite, pitch = haut/bas (0,0 = vers -z)
     std::uint64_t last = SDL_GetTicks(), fps_timer = last;
     int fps_frames = 0;
     bool running = true;
 
     while (running) {
-        // 1. Entrées : clic gauche + glisser = tourner, molette = zoom, flèches = tourner, Échap = quitter
+        // 1. Entrées
+        //    souris (clic gauche maintenu) ou flèches = regarder
+        //    ZQSD (WASD en QWERTY) = avancer/gauche/reculer/droite, Espace = monter, Ctrl = descendre, Shift = plus vite
+        //    Échap = quitter
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT) running = false;
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) running = false;
+            if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) SDL_SetWindowRelativeMouseMode(window, true);  // cache et bloque le curseur
+            if (e.type == SDL_EVENT_MOUSE_BUTTON_UP   && e.button.button == SDL_BUTTON_LEFT) SDL_SetWindowRelativeMouseMode(window, false);
             if (e.type == SDL_EVENT_MOUSE_MOTION && (e.motion.state & SDL_BUTTON_LMASK)) {
-                yaw   -= e.motion.xrel * 0.01;
-                pitch += e.motion.yrel * 0.01;
+                yaw   += e.motion.xrel * 0.003;
+                pitch -= e.motion.yrel * 0.003;
             }
-            if (e.type == SDL_EVENT_MOUSE_WHEEL) radius *= std::pow(0.9, e.wheel.y);
         }
 
         std::uint64_t now = SDL_GetTicks();
         double dt = (now - last) / 1000.; // secondes écoulées depuis l'image précédente
         last = now;
         const bool* keys = SDL_GetKeyboardState(nullptr);
-        if (keys[SDL_SCANCODE_LEFT])  yaw   -= 2*dt;
-        if (keys[SDL_SCANCODE_RIGHT]) yaw   += 2*dt;
-        if (keys[SDL_SCANCODE_UP])    pitch += 2*dt;
-        if (keys[SDL_SCANCODE_DOWN])  pitch -= 2*dt;
+        if (keys[SDL_SCANCODE_LEFT])  yaw   -= 1.5*dt;
+        if (keys[SDL_SCANCODE_RIGHT]) yaw   += 1.5*dt;
+        if (keys[SDL_SCANCODE_UP])    pitch += 1.5*dt;
+        if (keys[SDL_SCANCODE_DOWN])  pitch -= 1.5*dt;
+        pitch = std::clamp(pitch, -1.5, 1.5); // jamais à la verticale : up serait parallèle à la direction du regard
 
-        pitch  = std::clamp(pitch, -1.5, 1.5);  // jamais à la verticale : up serait parallèle à eye-center
-        radius = std::clamp(radius, 1.5, 10.);  // jamais dans le modèle : il n'y a pas de clipping
+        // Les scancodes désignent la position physique de la touche : SDL_SCANCODE_W est la touche Z d'un clavier AZERTY
+        vec3 forward = {std::cos(pitch)*std::sin(yaw), std::sin(pitch), -std::cos(pitch)*std::cos(yaw)}; // direction du regard
+        vec3 right   = {std::cos(yaw), 0, std::sin(yaw)};                                                // vers la droite, à l'horizontale
+        double step  = (keys[SDL_SCANCODE_LSHIFT] ? 6. : 2.) * dt;                                        // vitesse en unités par seconde
+        if (keys[SDL_SCANCODE_W])     eye = eye + forward*step;
+        if (keys[SDL_SCANCODE_S])     eye = eye - forward*step;
+        if (keys[SDL_SCANCODE_A])     eye = eye - right*step;
+        if (keys[SDL_SCANCODE_D])     eye = eye + right*step;
+        if (keys[SDL_SCANCODE_SPACE]) eye.y += step;
+        if (keys[SDL_SCANCODE_LCTRL]) eye.y -= step;
 
-        // 2. Caméra
-        vec3 eye = center + radius * vec3{std::cos(pitch)*std::sin(yaw), std::sin(pitch), std::cos(pitch)*std::cos(yaw)};
-        lookat(eye, center, up);
-        perspective(norm(eye-center));
-        const int size = static_cast<int>(width*7/8 * radius0/radius); // taille apparente inversement proportionnelle à la distance
-        viewport((width-size)/2, (height-size)/2, size, size);
+        // 2. Caméra : on regarde un point placé à la distance focal devant soi
+        lookat(eye, eye + forward*focal, up);
+        perspective(focal);
+        viewport(0, 0, width, height);
 
         // 3. Rendu, comme pour une image TGA
         TGAImage framebuffer(width, height, TGAImage::RGB);
@@ -440,7 +472,7 @@ int main(int argc, char** argv) {
                 }
                 TGAColor rnd;
                 for (int c=0; c<3; c++) rnd[c] = std::rand()%255;
-                rasterize(clip, zbuffer, framebuffer, rnd);
+                clip_and_rasterize(clip, zbuffer, framebuffer, rnd);
             }
         }
 
