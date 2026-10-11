@@ -343,13 +343,14 @@ void rasterize(const vec4 clip[3], std::vector<double> &zbuffer, TGAImage &frame
 
     mat<3,3> ABC = {{ {screen[0].x, screen[0].y, 1.}, {screen[1].x, screen[1].y, 1.}, {screen[2].x, screen[2].y, 1.} }};
     if (ABC.det()<1) return; // backface culling + discarding triangles that cover less than a pixel
+    const mat<3,3> ABC_it = ABC.invert_transpose(); // the same for every pixel of the triangle: compute it once
 
     auto [bbminx,bbmaxx] = std::minmax({screen[0].x, screen[1].x, screen[2].x}); // bounding box for the triangle
     auto [bbminy,bbmaxy] = std::minmax({screen[0].y, screen[1].y, screen[2].y}); // defined by its top left and bottom right corners
 #pragma omp parallel for
     for (int x=std::max<int>(bbminx, 0); x<=std::min<int>(bbmaxx, framebuffer.width()-1); x++) { // clip the bounding box by the screen
         for (int y=std::max<int>(bbminy, 0); y<=std::min<int>(bbmaxy, framebuffer.height()-1); y++) {
-            vec3 bc = ABC.invert_transpose() * vec3{static_cast<double>(x), static_cast<double>(y), 1.}; // barycentric coordinates of {x,y} w.r.t the triangle
+            vec3 bc = ABC_it * vec3{static_cast<double>(x), static_cast<double>(y), 1.}; // barycentric coordinates of {x,y} w.r.t the triangle
             if (bc.x<0 || bc.y<0 || bc.z<0) continue;                                                    // negative barycentric coordinate => the pixel is outside the triangle
             double z = bc * vec3{ ndc[0].z, ndc[1].z, ndc[2].z };
             if (z <= zbuffer[x+y*framebuffer.width()]) continue;
