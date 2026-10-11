@@ -122,9 +122,6 @@ double triangle_area(int ax, int ay, int bx, int by, int cx, int cy) {
 //     }
 // }
 
-#include <vector>
-#include <limits>
-#include <algorithm>
 
 // Fonction barycentrique compacte retournant votre struct vec<3>
 constexpr vec<3> barycentric(const vec<3>& a, const vec<3>& b, const vec<3>& c, double px, double py) noexcept {
@@ -231,6 +228,14 @@ vec<3> persp(vec<3> v) {
 //     zbuffer.write_tga_file("zbuffer.tga");
 //     return 0;
 // }
+
+mat<4,4> ModelView, Viewport, Perspective;
+
+std::tuple<int,int,int> project(vec<3> v) { // First of all, (x,y) is an orthogonal projection of the vector (x,y,z).
+    return { (v[0] + 1.) *  width/2,       // Second, since the input models are scaled to have fit in the [-1,1]^3 world coordinates,
+             (v[1] + 1.) * height/2,       // we want to shift the vector (x,y) and then scale it to span the entire screen.
+             (v[2] + 1.) *   255./2 };
+}
 
 void save_zbuffer_image(const std::vector<double>& zbuffer, int width, int height, const char* filename) {
     TGAImage img(width, height, TGAImage::GRAYSCALE);
