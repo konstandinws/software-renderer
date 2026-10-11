@@ -192,8 +192,12 @@ TGAColor random_color_V2(std::uniform_int_distribution<> &random_number_generato
     };
 }
 
-vec<3> rot(vec<3> v) {
-    constexpr double a = std::numbers::pi/6;
+constexpr double degree2rad(const double angle) {
+    return angle * std::numbers::pi / 180.0;
+}
+
+vec<3> rot(vec<3> v, double angle) {
+    const double a = degree2rad(angle);
     mat<3,3> Ry = {{{std::cos(a), 0, std::sin(a)}, {0,1,0}, {-std::sin(a), 0, std::cos(a)}}};
     return Ry*v;
 }
@@ -246,9 +250,9 @@ void save_zbuffer_image(const std::vector<double>& zbuffer, int width, int heigh
             double z = zbuffer[x + y * width];
             if (z > -std::numeric_limits<double>::infinity() / 2.0 && max_z > min_z) {
                 auto val = static_cast<std::uint8_t>(255.0 * (z - min_z) / (max_z - min_z));
-                img.set(x, y, TGAColor(val));
+                img.set(x, y, TGAColor{val});
             } else {
-                img.set(x, y, TGAColor(0)); // Fond noir
+                img.set(x, y, TGAColor{0}); // Fond noir
             }
         }
     }
@@ -256,7 +260,13 @@ void save_zbuffer_image(const std::vector<double>& zbuffer, int width, int heigh
     img.write_tga_file(filename);
 }
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " obj/model.obj" << std::endl;
+        return 1;
+    }
+
+    Model model(argv[1]);
     constexpr int width  = 800;
     constexpr int height = 800;
 
@@ -266,18 +276,16 @@ int main() {
     std::vector<double> zbuffer(width * height, -std::numeric_limits<double>::infinity());
 
     // 1. Matrice de rotation Y (45 degrés par exemple)
-    double angle = 3.141592653589793 / 4.0;
-    auto Ry = mat<3, 3>::rotation_y(angle);
 
     // 2. Boucle sur les triangles du modèle
-    for (int i = 0; i < model->nfaces(); ++i) {
+    for (int i = 0; i < model.nfaces(); ++i) {
         vec<3> screen_pts[3];
 
         for (int j = 0; j < 3; ++j) {
-            vec<3> world_pt = model->vert(i, j); // Sommet 3D du modèle dans [-1, 1]^3
+            vec<3> world_pt = model.vert(i, j); // Sommet 3D du modèle dans [-1, 1]^3
 
             // A. Rotation
-            vec<3> rotated = Ry * world_pt;
+            vec<3> rotated = rot(world_pt, 30);
 
             // B. Perspective (votre fonction)
             vec<3> projected = persp(rotated);
@@ -291,7 +299,7 @@ int main() {
         }
 
         // D. Rasterization avec zbuffer flottant
-        TGAColor color = TGAColor(rand() % 255, rand() % 255, rand() % 255, 255);
+        TGAColor color = TGAColor{static_cast<unsigned char>(rand() % 255), static_cast<unsigned char>(rand() % 255), static_cast<unsigned char>(rand() % 255), static_cast<unsigned char>(255)};
         triangle(screen_pts[0], screen_pts[1], screen_pts[2], zbuffer, framebuffer, color);
     }
 
